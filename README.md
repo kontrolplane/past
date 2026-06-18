@@ -1,12 +1,12 @@
-# past
+<p align="center">
+  <h1 align="center">past</h1>
+</p>
 
-a terminal ui for [`pass`](https://www.passwordstore.org/), the standard unix
-password manager — with first-class github integration.
+`past` (pass + tui) is a terminal user interface (tui) for [`pass`](https://www.passwordstore.org/), the standard unix password manager — with first-class github integration. It wraps your existing `pass`, `git`, `gpg`, and `gh` installs: it never re-implements crypto and never stores secrets itself. Every operation shells out to the tools you already trust, and clipboard copies go through `pass -c`, so pass owns the auto-clear timeout.
 
-`past` (pass + tui) wraps your existing `pass`, `git`, `gpg`, and `gh` installs.
-it never re-implements crypto and never stores secrets itself: every operation
-shells out to the tools you already trust. clipboard copies go through `pass -c`,
-so pass owns the auto-clear timeout.
+<p align="center">
+  <img width="2400" alt="past cassette" src="./assets/gifs/past.gif">
+</p>
 
 ## features
 
@@ -17,35 +17,40 @@ so pass owns the auto-clear timeout.
 - git sync status in the bar (`↑ahead ↓behind`, dirty dot) and one-key `pull --rebase` + `push`
 - github menu: provision a private store repo via `gh`, view secret-scanning alerts and recent actions runs
 
-## import
+## demonstration
 
-bring entries in from another manager's export, non-interactively:
+`browse`
+<p align="center">
+  <img width="2400" alt="past browse" src="./assets/screenshots/browse.png">
+</p>
 
-```sh
-past import secrets.csv     # or secrets.xml
-```
+`reveal`
+<p align="center">
+  <img width="2400" alt="past reveal" src="./assets/screenshots/reveal.png">
+</p>
 
-- **csv** — a header row with a required `name` (or `path`) column and an
-  optional `password` column; every other non-empty cell becomes a `key: value`
-  line, e.g. `name,password,user,url`.
-- **xml** — `<store><entry name="folder/x"><password>…</password><user>…</user></entry></store>`;
-  a `<password>` child is the first line, any other child becomes metadata.
+`add`
+<p align="center">
+  <img width="2400" alt="past add" src="./assets/screenshots/add.png">
+</p>
 
-imported entries are written but not committed — review them in the tree and
-commit from the github menu (`h`) when you're happy.
+`help`
+<p align="center">
+  <img width="2400" alt="past help" src="./assets/screenshots/help.png">
+</p>
 
 ## prerequisites
 
-| tool  | needed for            | install                |
-|-------|-----------------------|------------------------|
-| `pass`| everything            | `brew install pass`    |
-| `gpg` | pass encryption       | `brew install gnupg`   |
-| `git` | sync / status         | (usually preinstalled) |
-| `gh`  | github features only  | `brew install gh`      |
+| tool   | needed for           | install                |
+|--------|----------------------|------------------------|
+| `pass` | everything           | `brew install pass`    |
+| `gpg`  | pass encryption      | `brew install gnupg`   |
+| `git`  | sync / status        | (usually preinstalled) |
+| `gh`   | github features only | `brew install gh`      |
 
-you also need an initialized store and an authenticated `gh`:
+You also need an initialized store and an authenticated `gh`:
 
-```sh
+```bash
 pass init <your-gpg-id>   # creates ~/.password-store (or $PASSWORD_STORE_DIR)
 gh auth login             # only for the github menu
 ```
@@ -54,12 +59,24 @@ gh auth login             # only for the github menu
 
 ## install
 
-```sh
-go build -o past .
-./past
+```bash
+go build -o past . && ./past
 ```
 
 `past` honours `$PASSWORD_STORE_DIR` (default `~/.password-store`).
+
+## import
+
+Bring entries in from another manager's export, non-interactively:
+
+```bash
+past import secrets.csv     # or secrets.xml
+```
+
+- **csv** — a header row with a required `name` (or `path`) column and an optional `password` column; every other non-empty cell becomes a `key: value` line, e.g. `name,password,user,url`.
+- **xml** — `<store><entry name="folder/x"><password>…</password><user>…</user></entry></store>`; a `<password>` child is the first line, any other child becomes metadata.
+
+Imported entries are written but not committed — review them in the tree and commit from the github menu (`h`) when you're happy.
 
 ## keybindings
 
@@ -82,14 +99,11 @@ go build -o past .
 | `?`       | toggle help                             |
 | `q`       | quit                                    |
 
-inside the github menu: commit staged changes, sync, provision a repo, and view
-alerts / actions runs. `j`/`k` move, `enter` selects, `esc` backs out.
+Inside the github menu: commit staged changes, sync, provision a repo, and view alerts / actions runs. `j`/`k` move, `enter` selects, `esc` backs out.
 
 ## config
 
-optional dotfile at `~/.config/past/config` (override with `$XDG_CONFIG_HOME` or
-`$PAST_CONFIG`). simple `key = value` lines, `#` comments. missing file or keys
-fall back to defaults.
+Optional dotfile at `~/.config/past/config` (override with `$XDG_CONFIG_HOME` or `$PAST_CONFIG`). Simple `key = value` lines, `#` comments. Missing file or keys fall back to defaults.
 
 ```ini
 # commit every change automatically (default: true)
@@ -98,11 +112,26 @@ auto_commit = false
 
 ## a note on secret-scanning
 
-the store holds *encrypted* `.gpg` blobs, so github secret-scanning will almost
-always report **no alerts** — the value of the panel is confirming the repo is
-clean and private, not catching leaked plaintext.
+The store holds *encrypted* `.gpg` blobs, so github secret-scanning will almost always report **no alerts** — the value of the panel is confirming the repo is clean and private, not catching leaked plaintext.
 
 ## non-goals (v1)
 
-otp/totp, multiple stores, mouse support, and non-github remotes. the git layer
-is remote-agnostic, but only github gets the `gh`-powered features.
+otp/totp, multiple stores, mouse support, and non-github remotes. The git layer is remote-agnostic, but only github gets the `gh`-powered features.
+
+## development
+
+- [go](https://go.dev/) 1.26+
+
+```bash
+go build -o past . && ./past
+```
+
+To show the changes made in the repository readme, the following command can be ran which automatically creates the preview gif & screenshots:
+
+```bash
+make vhs
+```
+
+## contributors
+
+<a href="https://github.com/levivannoort"><img src="https://avatars.githubusercontent.com/u/73097785?v=4" title="levivannoort" width="50" height="50"></a>
