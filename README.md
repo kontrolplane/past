@@ -1,44 +1,39 @@
 <p align="center">
-  <h1 align="center">past</h1>
+  <h1 align="center">
+    <a href="https://kontrolplane.dev">
+      <img width="1500" alt="kontrolplane past" src="./assets/kontrolplane-header.svg">
+    </a>
+  </h1>
 </p>
 
-`past` (pass + tui) is a terminal user interface (tui) for [`pass`](https://www.passwordstore.org/), the standard unix password manager — with first-class github integration. It wraps your existing `pass`, `git`, `gpg`, and `gh` installs: it never re-implements crypto and never stores secrets itself. Every operation shells out to the tools you already trust, and clipboard copies go through `pass -c`, so pass owns the auto-clear timeout.
+`past` (pass + tui) is a terminal user interface (tui) application for [`pass`](https://www.passwordstore.org/), the standard unix password manager, with first-class github integration. It wraps your existing `pass`, `git`, `gpg`, and `gh` installs: it never re-implements crypto and never stores secrets itself. Every operation shells out to the tools you already trust, and clipboard copies go through `pass -c`, so pass owns the auto-clear timeout.
 
-<p align="center">
-  <img width="2400" alt="past cassette" src="./assets/gifs/past.gif">
-</p>
+<img width="1500" alt="past demo" src="./assets/cassette.gif">
+
+## views
+
+- `store`: the entries as a collapsible tree nested under their folders, a filter that flattens it to the matches, and a folder's contents beside it
+- `entry`: details with the password masked until revealed, coloured by character class and rated by a strength meter, then its fields and notes; copy a field, create from a type, rename, duplicate, delete
+- `github`: commit staged changes, `pull --rebase` and `push`, provision a private repo via `gh`, secret-scanning alerts and recent actions runs
+
+The header shows the store and its remote, how many entries and folders it holds, whether it is ahead of or behind its upstream and has uncommitted changes, whether changes commit on their own, and when the clipboard clears.
+
+<img alt="store overview" src="./assets/pages/store/overview.png">
+<img alt="entry details" src="./assets/pages/entry/details.png">
+<img alt="store filter" src="./assets/pages/store/filter.png">
+<img alt="copy a field" src="./assets/pages/entry/copy.png">
+<img alt="create an entry" src="./assets/pages/entry/create.png">
+<img alt="delete an entry" src="./assets/pages/entry/delete.png">
+<img alt="github" src="./assets/pages/store/github.png">
+<img alt="help" src="./assets/pages/store/help.png">
 
 ## features
 
-- browse the store as a collapsible tree (entries nested under their folders), beside a detail pane: the password masked by default, coloured by character class when revealed, with a strength meter
-- the kontrolplane look shared with [relay](https://github.com/kontrolplane/relay) and [tablespace](https://github.com/kontrolplane/tablespace): a header with the store's facts, a framed page with a breadcrumb, dialogs set over the page, and dark and light themes
-- copy, generate, regenerate, add, edit, rename/move, duplicate, and delete entries
+- browse, copy, generate, regenerate, add, edit, rename/move, duplicate, and delete entries
 - bulk-import from a CSV or XML export: `past import secrets.csv`
 - every change auto-commits by default; turn it off (`auto_commit = false`) to stage changes and commit them yourself from the github menu (`h`)
-- git sync status in the bar (`↑ahead ↓behind`, dirty dot) and one-key `pull --rebase` + `push`
-- github menu: provision a private store repo via `gh`, view secret-scanning alerts and recent actions runs
-
-## demonstration
-
-`browse`
-<p align="center">
-  <img width="2400" alt="past browse" src="./assets/screenshots/browse.png">
-</p>
-
-`reveal`
-<p align="center">
-  <img width="2400" alt="past reveal" src="./assets/screenshots/reveal.png">
-</p>
-
-`add`
-<p align="center">
-  <img width="2400" alt="past add" src="./assets/screenshots/add.png">
-</p>
-
-`help`
-<p align="center">
-  <img width="2400" alt="past help" src="./assets/screenshots/help.png">
-</p>
+- the git state in the frame (`● synced`, `↑ahead ↓behind`, `● uncommitted`) and one-key `pull --rebase` + `push`
+- the same look as [relay](https://github.com/kontrolplane/relay) and [tablespace](https://github.com/kontrolplane/tablespace), in a dark and a light theme
 
 ## prerequisites
 
@@ -134,7 +129,7 @@ otp/totp, multiple stores, mouse support, and non-github remotes. The git layer 
 go build -o past . && ./past
 ```
 
-To show the changes made in the repository readme, the following command can be ran which automatically creates the preview gif & screenshots:
+To show the changes made in the repository readme, the following command can be ran which records the gif and a screenshot of every page inside a container:
 
 ```bash
 make vhs
@@ -142,4 +137,14 @@ make vhs
 
 ## contributors
 
+[//]: kontrolplane/generate-contributors-list
+
 <a href="https://github.com/levivannoort"><img src="https://avatars.githubusercontent.com/u/73097785?v=4" title="levivannoort" width="50" height="50"></a>
+
+[//]: kontrolplane/generate-contributors-list
+
+</br>
+
+<p align="center">
+  <img width="1500" alt="kontrolplane footer" src="./assets/kontrolplane-footer.svg">
+</p>

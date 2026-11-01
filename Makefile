@@ -27,9 +27,9 @@ install: build
 clean:
 	rm -f $(BINARY)
 
-# regenerate the README gif inside a container, so nothing but the output
-# (written to ./assets) ever touches the host — no gpg key, store, or agent.
+# regenerate the README gif and pages inside a container, so nothing but the
+# output (written to ./assets) ever touches the host — no gpg key, store, or agent.
 vhs:
 	docker build -t past-vhs -f vhs/Dockerfile .
-	mkdir -p assets/gifs assets/screenshots
+	mkdir -p assets/pages/store assets/pages/entry
 	docker run --rm -v "$(CURDIR)/assets:/out" past-vhs
