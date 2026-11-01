@@ -5,11 +5,11 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
-func keyEnter() tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyEnter} }
+func keyEnter() tea.KeyPressMsg { return tea.KeyPressMsg{Code: tea.KeyEnter} }
 
 func TestLooksLocked(t *testing.T) {
 	locked := []string{
@@ -55,20 +55,56 @@ func TestPromptGuards(t *testing.T) {
 }
 
 // a long password/value must wrap, never overflow the detail pane (which would
-// push the box's right border out of alignment).
+// push the frame's right border out of alignment).
 func TestDetailWraps(t *testing.T) {
-	m := New()
-	m.width, m.height = 80, 24
-	m.layout()
+	m := sized(t, 100, 30)
 	m.tree.setEntries([]string{"x"})
+	m.ready = true
 	m.current = "x"
-	m.detailRaw = "user: " + strings.Repeat("a", 500) // no spaces, must hard-wrap
+	m.detailRaw = strings.Repeat("p", 300) + "\nuser: " + strings.Repeat("a", 500) // no spaces, must hard-wrap
 	m.masked = false
-	m.tree.toggle() // open the leaf so its detail inlines into the tree
-	m.renderDetail()
-	for _, ln := range strings.Split(m.tree.view(), "\n") {
-		if w := lipgloss.Width(ln); w > m.tree.width {
-			t.Fatalf("tree line width %d exceeds tree width %d", w, m.tree.width)
+	assertFits(t, m)
+}
+
+// every screen, dialogs and help included, must fit the terminal exactly.
+func TestScreensFit(t *testing.T) {
+	for _, size := range [][2]int{{80, 24}, {120, 40}, {200, 60}, {40, 10}} {
+		m := sized(t, size[0], size[1])
+		m.ready = true
+		m.tree.setEntries([]string{"bank/amex", "bank/visa", "cloud/aws", "email", strings.Repeat("long/", 30) + "leaf"})
+		m.tree.down()
+		m.current = "bank/amex"
+		m.detailRaw = "hunter2\nusername: levi\nurl: https://example.com\na note"
+		assertFits(t, m)
+		m.showHelp = true
+		assertFits(t, m)
+		m.showHelp = false
+		for _, md := range []mode{modeCreate, modeConfirmDelete, modeGithub, modeUnlock, modePrompt, modeCommit, modeCopy} {
+			m.mode = md
+			m.genPicking = true
+			assertFits(t, m)
+		}
+		m.mode = modeCreate
+		m.startForm(2)
+		assertFits(t, m)
+	}
+}
+
+func sized(t *testing.T, w, h int) Model {
+	t.Helper()
+	m, _ := step(New(), tea.WindowSizeMsg{Width: w, Height: h})
+	return m
+}
+
+func assertFits(t *testing.T, m Model) {
+	t.Helper()
+	lines := strings.Split(m.render(), "\n")
+	if len(lines) != m.height {
+		t.Fatalf("%dx%d mode %d: %d lines, want %d", m.width, m.height, m.mode, len(lines), m.height)
+	}
+	for i, ln := range lines {
+		if w := lipgloss.Width(ln); w != m.width {
+			t.Fatalf("%dx%d mode %d: line %d is %d wide, want %d: %q", m.width, m.height, m.mode, i, w, m.width, ln)
 		}
 	}
 }

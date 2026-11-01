@@ -8,10 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/spinner"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/kontrolplane/past/internal/gh"
 	"github.com/kontrolplane/past/internal/git"
@@ -50,13 +49,13 @@ type Model struct {
 	mode     mode
 	width    int
 	height   int
-	treeH    int // rows allotted to the tree
 
 	current   string // selected entry name backing the detail pane
 	detailRaw string // raw decrypted content for the detail pane
 	masked    bool
 
 	copyCursor int // selected field in the copy picker (modeCopy)
+	confirmSel int // focused button in the delete dialog: 0 no, 1 yes
 
 	status  git.SyncStatus
 	repo    gh.Repo
@@ -92,21 +91,20 @@ type Model struct {
 
 // New constructs the initial model.
 func New() Model {
-	sp := spinner.New()
-	sp.Spinner = spinner.Dot
-	sp.Style = theme.Accent
+	sp := spinner.New(
+		spinner.WithSpinner(spinner.MiniDot),
+		spinner.WithStyle(theme.Fg(theme.ToneAccent)),
+	)
 
-	length := textinput.New()
-	length.Placeholder = "24"
+	length := newInput("24")
 	length.CharLimit = 3
+	length.SetWidth(4)
 
-	pp := textinput.New()
-	pp.Placeholder = "passphrase"
+	pp := newInput("passphrase")
 	pp.EchoMode = textinput.EchoPassword
 	pp.EchoCharacter = '•'
 
-	prompt := textinput.New()
-	prompt.Placeholder = "folder/name"
+	prompt := newInput("folder/name")
 
 	return Model{
 		tree:        newTree(),
@@ -119,6 +117,17 @@ func New() Model {
 	}
 }
 
+// newInput builds a text input in the palette, with the chevron prompt the
+// sibling tools use.
+func newInput(placeholder string) textinput.Model {
+	in := textinput.New()
+	in.Placeholder = placeholder
+	in.Prompt = "› "
+	in.SetStyles(theme.TextInput())
+	in.SetWidth(40)
+	return in
+}
+
 func (m Model) Init() tea.Cmd {
 	return tea.Batch(loadEntries, loadStatus, checkAuth, m.spinner.Tick)
 }
@@ -127,6 +136,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+		setLayout(m.width, m.height)
 		m.layout()
 		return m, nil
 
@@ -147,14 +157,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case clearDetailMsg:
 		m.current = ""
 		m.detailRaw = ""
-		m.renderDetail()
 		return m, nil
 
 	case detailMsg:
 		m.current = msg.name
 		m.detailRaw = msg.content
 		m.masked = true
-		m.renderDetail()
 		return m, nil
 
 	case statusMsg:
@@ -234,14 +242,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.flash(msg.err.Error(), true)
 		return m, nil
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		return m.handleKey(msg)
 	}
 	return m, nil
 }
 
 // handleKey dispatches keys by mode.
-func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	if msg.String() == "ctrl+c" {
+		return m, tea.Quit
+	}
 	switch m.mode {
 	case modeCreate:
 		return m.handleCreateKey(msg)
@@ -261,27 +272,29 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m.handleBrowseKey(msg)
 }
 
-func (m Model) handleBrowseKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleBrowseKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	// while the filter input has focus, route keys to it.
 	if m.tree.editing {
 		cmd := m.tree.updateFilter(msg)
 		return m, tea.Batch(cmd, m.selectCurrent())
 	}
 
+	// the help card sits over the page; any key closes it.
+	if m.showHelp {
+		m.showHelp = false
+		return m, nil
+	}
+
 	switch msg.String() {
-	case "q", "ctrl+c":
+	case "q":
 		return m, tea.Quit
 	case "?":
-		m.showHelp = !m.showHelp
+		m.showHelp = true
 		return m, nil
 	case "/":
 		cmd := m.tree.startFilter()
 		return m, tea.Batch(cmd, m.selectCurrent())
 	case "esc":
-		if m.showHelp {
-			m.showHelp = false
-			return m, nil
-		}
 		if m.tree.filtering() {
 			m.tree.clearFilter()
 			return m, m.selectCurrent()
@@ -293,7 +306,25 @@ func (m Model) handleBrowseKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "k", "up":
 		m.tree.up()
 		return m, m.selectCurrent()
-	case "enter", " ":
+	case "pgdown", "ctrl+f":
+		m.tree.jump(max(1, m.tree.height-1))
+		return m, m.selectCurrent()
+	case "pgup", "ctrl+b":
+		m.tree.jump(-max(1, m.tree.height-1))
+		return m, m.selectCurrent()
+	case "home":
+		m.tree.jump(-len(m.tree.rows))
+		return m, m.selectCurrent()
+	case "end":
+		m.tree.jump(len(m.tree.rows))
+		return m, m.selectCurrent()
+	case "left":
+		m.tree.fold(false)
+		return m, m.selectCurrent()
+	case "right":
+		m.tree.fold(true)
+		return m, m.selectCurrent()
+	case "enter", "space":
 		// the selected leaf's detail is always shown; enter/space folds a folder
 		// or reveals/masks the leaf's password.
 		n := m.tree.selected()
@@ -304,8 +335,9 @@ func (m Model) handleBrowseKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.tree.toggle()
 			return m, m.selectCurrent()
 		}
-		m.masked = !m.masked
-		m.renderDetail()
+		if n.path == m.current {
+			m.masked = !m.masked
+		}
 		return m, nil
 	case "c":
 		if m.current == "" {
@@ -351,6 +383,7 @@ func (m Model) handleBrowseKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "d":
 		if m.current != "" {
 			m.mode = modeConfirmDelete
+			m.confirmSel = 0
 		}
 		return m, nil
 	case "s":
@@ -394,7 +427,7 @@ func (m Model) openUnlock() Model {
 	return m
 }
 
-func (m Model) handleUnlockKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleUnlockKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		// cancelling still drops to the store; entry names aren't secret, and
@@ -431,7 +464,7 @@ func (m Model) openPrompt(src string, cp bool) Model {
 	return m
 }
 
-func (m Model) handlePromptKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) handlePromptKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.mode = modeBrowse
@@ -451,7 +484,7 @@ func (m Model) handlePromptKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m Model) handleCommitKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleCommitKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.mode = modeBrowse
@@ -466,7 +499,7 @@ func (m Model) handleCommitKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m Model) handleCopyKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleCopyKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	fields := parseFields(m.detailRaw)
 	switch msg.String() {
 	case "esc", "q", "c":
@@ -516,8 +549,7 @@ func (m *Model) startForm(idx int) tea.Cmd {
 	m.genPreset = idx
 	m.genInputs = nil
 	for _, f := range presets[idx].editable() {
-		in := textinput.New()
-		in.Placeholder = f.label
+		in := newInput(f.label)
 		m.genInputs = append(m.genInputs, in)
 	}
 	m.genLen.SetValue("24")
@@ -544,7 +576,7 @@ func (m *Model) focusForm() {
 	}
 }
 
-func (m Model) handleCreateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleCreateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.genPicking {
 		switch msg.String() {
 		case "esc", "q":
@@ -636,22 +668,32 @@ func (m Model) submitForm() (tea.Model, tea.Cmd) {
 	return m, createEntry(name, genPw, length, m.symbols, secret, metas)
 }
 
-func (m Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleConfirmKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	yes := false
 	switch msg.String() {
+	case "left", "right", "tab", "shift+tab", "h", "l":
+		m.confirmSel = 1 - m.confirmSel
+		return m, nil
 	case "y":
-		name := m.current
-		m.mode = modeBrowse
-		m.current = ""
-		m.detailRaw = ""
-		m.renderDetail()
-		return m, removeEntry(name)
+		yes = true
+	case "enter":
+		yes = m.confirmSel == 1
+	case "n", "esc", "q":
 	default:
-		m.mode = modeBrowse
 		return m, nil
 	}
+	m.mode = modeBrowse
+	m.confirmSel = 0
+	if !yes {
+		return m, nil
+	}
+	name := m.current
+	m.current = ""
+	m.detailRaw = ""
+	return m, removeEntry(name)
 }
 
-func (m Model) handleGithubKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleGithubKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc", "h", "q":
 		if m.ghView != ghMenu {
@@ -755,64 +797,12 @@ func (m *Model) flash(msg string, isErr bool) {
 	m.messageAt = time.Now()
 }
 
-// layout sizes the tree to fill the padded screen below the title and above
-// the footer.
+// layout sizes the tree to its pane inside the frame.
 func (m *Model) layout() {
 	if m.width == 0 {
 		return
 	}
-	treeW := m.width - 2*padX
-	if treeW < 1 {
-		treeW = 1
-	}
-	m.treeH = m.height - 2*padY - 4 // title + two blank separators + footer
-	if m.treeH < 1 {
-		m.treeH = 1
-	}
-	m.tree.setSize(treeW, m.treeH)
-	m.renderDetail()
-}
-
-// renderDetail builds the inline detail block for the selected entry, masking
-// the first line (the password) unless revealed. The tree always shows it under
-// the selected leaf, keyed to detailPath so a reload never shows it elsewhere.
-func (m *Model) renderDetail() {
-	if m.tree.width == 0 || m.current == "" {
-		m.tree.detail = ""
-		m.tree.detailPath = ""
-		return
-	}
-	m.tree.detailPath = m.current
-	fields := parseFields(m.detailRaw)
-	if m.masked {
-		fields[0].val = strings.Repeat("•", max(len([]rune(fields[0].val)), 1))
-	}
-	// the password row carries a reveal hint beside its key (not trailing the
-	// masked value, where it reads as part of the dots).
-	const revealHint = " (space)"
-	key0 := fields[0].key + revealHint
-	// align values past the widest key, like the example layout.
-	kw := lipgloss.Width(key0)
-	for _, f := range fields {
-		if w := lipgloss.Width(f.key); w > kw {
-			kw = w
-		}
-	}
-	var b strings.Builder
-	for i, f := range fields {
-		key := f.key
-		if i == 0 {
-			key = key0
-		}
-		b.WriteString(theme.Label.Render(key + strings.Repeat(" ", kw-lipgloss.Width(key))))
-		b.WriteString("  " + theme.Body.Render(f.val))
-		if i < len(fields)-1 {
-			b.WriteByte('\n')
-		}
-	}
-	// the tree wraps and indents this block under the leaf when it's open.
-	m.tree.detail = b.String()
-	m.tree.clampOffset()
+	m.tree.setSize(treeWidth(), contentHeight)
 }
 
 // field is one display row in the detail dock.

@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/kontrolplane/past/internal/pass"
 )
@@ -15,14 +15,15 @@ func step(m Model, msg tea.Msg) (Model, tea.Cmd) {
 	return next.(Model), cmd
 }
 
-func mkKey(s string) tea.KeyMsg {
+func mkKey(s string) tea.KeyPressMsg {
 	switch s {
 	case "enter":
-		return tea.KeyMsg{Type: tea.KeyEnter}
+		return tea.KeyPressMsg{Code: tea.KeyEnter}
 	case "esc":
-		return tea.KeyMsg{Type: tea.KeyEsc}
+		return tea.KeyPressMsg{Code: tea.KeyEscape}
 	default:
-		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
+		r := []rune(s)[0]
+		return tea.KeyPressMsg{Code: r, Text: s}
 	}
 }
 

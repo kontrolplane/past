@@ -5,16 +5,19 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/kontrolplane/past/internal/config"
 	"github.com/kontrolplane/past/internal/git"
 	"github.com/kontrolplane/past/internal/importer"
 	"github.com/kontrolplane/past/internal/pass"
 	"github.com/kontrolplane/past/internal/setup"
+	"github.com/kontrolplane/past/internal/theme"
 	"github.com/kontrolplane/past/internal/tui"
 )
 
@@ -28,6 +31,33 @@ func main() {
 		return
 	}
 
+	fs := flag.NewFlagSet("past", flag.ExitOnError)
+	fs.Usage = func() {
+		fmt.Fprintln(os.Stderr, "usage: past [--theme auto|dark|light]")
+		fmt.Fprintln(os.Stderr, "       past import <file.csv|file.xml>")
+		fmt.Fprintln(os.Stderr)
+		fs.PrintDefaults()
+	}
+	themeName := fs.String("theme", "auto", "colour theme: auto follows the terminal, dark or light also paint the background")
+	_ = fs.Parse(os.Args[1:])
+	if fs.NArg() > 0 {
+		fmt.Fprintf(os.Stderr, "past: unexpected argument %q (see past --help)\n", fs.Arg(0))
+		os.Exit(2)
+	}
+	switch *themeName {
+	case "dark":
+		theme.Use(true)
+		theme.Paint = true
+	case "light":
+		theme.Use(false)
+		theme.Paint = true
+	case "auto":
+		theme.Use(lipgloss.HasDarkBackground(os.Stdin, os.Stdout))
+	default:
+		fmt.Fprintf(os.Stderr, "past: unknown theme %q, use auto, dark or light\n", *themeName)
+		os.Exit(2)
+	}
+
 	// when a prerequisite is missing, show the unfolding setup tree (no
 	// alt-screen, so it stays on screen after quit) instead of launching.
 	if steps := setup.Check(); !setup.Complete(steps) {
@@ -39,7 +69,7 @@ func main() {
 
 	git.AutoCommit = config.Load().AutoCommit
 
-	p := tea.NewProgram(tui.New(), tea.WithAltScreen())
+	p := tea.NewProgram(tui.New())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintln(os.Stderr, "past:", err)
 		os.Exit(1)

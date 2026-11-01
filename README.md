@@ -10,7 +10,8 @@
 
 ## features
 
-- browse the store as a collapsible tree (entries nested under their folders), with a detail pane (password masked by default)
+- browse the store as a collapsible tree (entries nested under their folders), beside a detail pane: the password masked by default, coloured by character class when revealed, with a strength meter
+- the kontrolplane look shared with [relay](https://github.com/kontrolplane/relay) and [tablespace](https://github.com/kontrolplane/tablespace): a header with the store's facts, a framed page with a breadcrumb, dialogs set over the page, and dark and light themes
 - copy, generate, regenerate, add, edit, rename/move, duplicate, and delete entries
 - bulk-import from a CSV or XML export: `past import secrets.csv`
 - every change auto-commits by default; turn it off (`auto_commit = false`) to stage changes and commit them yourself from the github menu (`h`)
@@ -65,6 +66,11 @@ go build -o past . && ./past
 
 `past` honours `$PASSWORD_STORE_DIR` (default `~/.password-store`).
 
+```bash
+past --theme auto    # follow the terminal (default)
+past --theme dark    # or light: also paints the background
+```
+
 ## import
 
 Bring entries in from another manager's export, non-interactively:
@@ -83,6 +89,8 @@ Imported entries are written but not committed — review them in the tree and c
 | key       | action                                  |
 |-----------|-----------------------------------------|
 | `j` / `k` | move down / up                          |
+| `←` / `→` | fold / unfold a folder (`←` on an entry jumps to its folder) |
+| `pgup` / `pgdn`, `home` / `end` | page, first / last          |
 | `/`       | filter entries                          |
 | `enter` / `space` | on a leaf: reveal / mask the password; on a folder: fold / unfold |
 | `c`       | copy — password (clears after a timeout) for a single-field entry; otherwise pick a field. the password always clears via pass; other field values are copied as-is and don't auto-clear |
@@ -92,14 +100,14 @@ Imported entries are written but not committed — review them in the tree and c
 | `p`       | regenerate the entry's password in place (keeps metadata) |
 | `r`       | rename / move the entry (type a new path) |
 | `y`       | duplicate the entry to a new path       |
-| `d`       | delete (asks `y` to confirm)            |
+| `d`       | delete (asks to confirm: `y`, or `←`/`→` and `enter`) |
 | `s`       | sync — `pass git pull --rebase` then `push` |
 | `h`       | github menu (commit, sync, repo)        |
 | `u`       | unlock — enter the gpg passphrase in-app (also prompts automatically on a locked key) |
-| `?`       | toggle help                             |
+| `?`       | help (any key closes it)                |
 | `q`       | quit                                    |
 
-Inside the github menu: commit staged changes, sync, provision a repo, and view alerts / actions runs. `j`/`k` move, `enter` selects, `esc` backs out.
+Inside the github menu: commit staged changes, sync, provision a repo, and view alerts / actions runs. `↑`/`↓` move, `enter` selects, `esc` backs out.
 
 ## config
 

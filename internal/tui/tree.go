@@ -1,12 +1,14 @@
 package tui
 
 import (
+	"fmt"
+	"image/color"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/kontrolplane/past/internal/theme"
 )
@@ -16,6 +18,7 @@ import (
 type node struct {
 	label    string
 	path     string
+	dir      string // a folder's own path in the store, e.g. "bank/cards"
 	expanded bool
 	children []*node
 }
@@ -23,17 +26,15 @@ type node struct {
 // tree is the browse-pane widget: a collapsible hierarchy of store entries with
 // a live filter. It replaces the flat list so that foo/bar renders nested under
 // a foo/ folder. Folders start expanded, so a fresh store shows everything.
+// The selected entry's detail is drawn beside the tree, not in it.
 type tree struct {
 	root     *node
 	rows     []*node  // currently visible rows, recomputed by rebuild
 	prefixes []string // tree-branch prefix per visible row, aligned with rows
 	cursor   int
-	offset   int // scroll offset, in display lines (rows + any inlined detail)
+	offset   int // first visible row
 	width    int
 	height   int
-
-	detail     string // pre-rendered detail block, inlined under the selected leaf
-	detailPath string // entry the detail belongs to; only shown under its own row
 
 	editing bool // the filter input has focus
 	filter  string
@@ -42,8 +43,9 @@ type tree struct {
 
 func newTree() tree {
 	in := textinput.New()
-	in.Placeholder = "filter"
-	in.Prompt = "/"
+	in.Placeholder = "name or folder"
+	in.Prompt = ""
+	in.SetStyles(theme.TextInput())
 	return tree{root: &node{expanded: true}, input: in}
 }
 
@@ -58,7 +60,7 @@ func (t *tree) setEntries(entries []string) {
 				cur.children = append(cur.children, &node{label: seg, path: e})
 				continue
 			}
-			cur = childFolder(cur, seg)
+			cur = childFolder(cur, seg, strings.Join(segs[:i+1], "/"))
 		}
 	}
 	sortNode(root)
@@ -69,13 +71,13 @@ func (t *tree) setEntries(entries []string) {
 }
 
 // childFolder finds or creates the folder child of parent with the given label.
-func childFolder(parent *node, label string) *node {
+func childFolder(parent *node, label, dir string) *node {
 	for _, c := range parent.children {
 		if c.path == "" && c.label == label {
 			return c
 		}
 	}
-	n := &node{label: label, expanded: true}
+	n := &node{label: label, dir: dir, expanded: true}
 	parent.children = append(parent.children, n)
 	return n
 }
@@ -147,98 +149,23 @@ func (t *tree) rebuild() {
 	t.clampOffset()
 }
 
-// visibleHeight is the row capacity, reserving a line for the filter indicator.
-func (t *tree) visibleHeight() int {
-	h := t.height
-	if t.filtering() {
-		h--
-	}
-	if h < 1 {
-		h = 1
-	}
-	return h
-}
-
 func (t *tree) clampOffset() {
-	_, cur := t.lines()
-	h := t.visibleHeight()
-	if cur < t.offset {
-		t.offset = cur
+	h := max(1, t.height)
+	if t.cursor < t.offset {
+		t.offset = t.cursor
 	}
-	if cur >= t.offset+h {
-		t.offset = cur - h + 1
+	if t.cursor >= t.offset+h {
+		t.offset = t.cursor - h + 1
 	}
-	// pull the open leaf's detail block into view if it runs past the bottom,
-	// but never by scrolling the cursor row itself off the top.
-	if blockEnd := cur + t.detailHeight(); blockEnd >= t.offset+h {
-		t.offset = blockEnd - h + 1
-		if t.offset > cur {
-			t.offset = cur
-		}
-	}
-	if t.offset < 0 {
-		t.offset = 0
-	}
+	t.offset = max(0, min(t.offset, len(t.rows)-h))
 }
 
-// detailHeight is the number of inlined detail lines under the cursor, or 0 when
-// the cursor isn't the leaf whose detail is loaded.
-func (t *tree) detailHeight() int {
-	n := t.selected()
-	if !t.showsDetail(n) {
-		return 0
+// position reports where the cursor is among the visible rows, e.g. "3 of 20".
+func (t *tree) position() string {
+	if len(t.rows) == 0 {
+		return ""
 	}
-	return len(t.detailLines(t.prefixes[t.cursor]))
-}
-
-// showsDetail reports whether n is the leaf whose loaded detail should be
-// inlined: the detail always shows for the selected entry, but only under its
-// own row, so an async reload never flashes the old entry's detail under a new
-// one.
-func (t *tree) showsDetail(n *node) bool {
-	return n != nil && n.path != "" && n.path == t.detailPath && t.detail != ""
-}
-
-// lines renders every visible row to a display line, inlining the detail block
-// under the selected leaf. It returns the lines and the display-line index of
-// the cursor row.
-func (t *tree) lines() ([]string, int) {
-	var out []string
-	cursorLine := 0
-	for i, n := range t.rows {
-		sel := i == t.cursor
-		if sel {
-			cursorLine = len(out)
-		}
-		out = append(out, t.renderRow(n, t.prefixes[i], sel))
-		if sel && t.showsDetail(n) {
-			out = append(out, t.detailLines(t.prefixes[i])...)
-		}
-	}
-	return out, cursorLine
-}
-
-// detailLines wraps the stored detail block and leads each line with the open
-// leaf's continuation guide ("├─ " → "│  ", "└─ " → "   "), so the detail nests
-// under the label and the tree's vertical line carries past it to the next row.
-func (t *tree) detailLines(prefix string) []string {
-	guide := prefix
-	switch {
-	case strings.HasSuffix(prefix, "├─ "):
-		guide = strings.TrimSuffix(prefix, "├─ ") + "│  "
-	case strings.HasSuffix(prefix, "└─ "):
-		guide = strings.TrimSuffix(prefix, "└─ ") + "   "
-	}
-	w := t.width - lipgloss.Width(guide)
-	if w < 1 {
-		w = 1
-	}
-	lead := theme.Rule.Render(guide)
-	var out []string
-	for _, ln := range strings.Split(lipgloss.NewStyle().Width(w).Render(t.detail), "\n") {
-		out = append(out, lead+ln)
-	}
-	return out
+	return fmt.Sprintf("%d of %d", t.cursor+1, len(t.rows))
 }
 
 // selected returns the node under the cursor, or nil when the tree is empty.
@@ -263,8 +190,38 @@ func (t *tree) down() {
 	}
 }
 
+// jump moves the cursor by n rows, stopping at either end.
+func (t *tree) jump(n int) {
+	t.cursor = max(0, min(len(t.rows)-1, t.cursor+n))
+	t.clampOffset()
+}
+
+// fold collapses (or with open, expands) the folder under the cursor. On an
+// entry, or a folder that is already closed, collapsing steps out to the parent.
+func (t *tree) fold(open bool) {
+	n := t.selected()
+	if n == nil || t.filter != "" {
+		return
+	}
+	if n.path == "" && n.expanded != open {
+		t.toggle()
+		return
+	}
+	if open {
+		return
+	}
+	depth := utf8.RuneCountInString(t.prefixes[t.cursor])
+	for i := t.cursor - 1; i >= 0; i-- {
+		if t.rows[i].path == "" && utf8.RuneCountInString(t.prefixes[i]) < depth {
+			t.cursor = i
+			t.clampOffset()
+			return
+		}
+	}
+}
+
 // toggle folds or unfolds the folder under the cursor. Leaves have no fold
-// state — their detail is always shown when selected.
+// state.
 func (t *tree) toggle() {
 	if n := t.selected(); n != nil {
 		n.expanded = !n.expanded
@@ -279,12 +236,11 @@ func (t *tree) startFilter() tea.Cmd {
 	t.cursor = 0
 	t.offset = 0
 	t.rebuild()
-	t.input.Focus()
-	return textinput.Blink
+	return t.input.Focus()
 }
 
 // updateFilter feeds a key to the filter input; esc clears, enter confirms.
-func (t *tree) updateFilter(msg tea.KeyMsg) tea.Cmd {
+func (t *tree) updateFilter(msg tea.KeyPressMsg) tea.Cmd {
 	switch msg.String() {
 	case "esc":
 		t.clearFilter()
@@ -319,87 +275,109 @@ func (t *tree) setSize(w, h int) {
 	t.clampOffset()
 }
 
-func (t *tree) view() string {
-	var b strings.Builder
-	if t.filtering() {
-		if t.editing {
-			b.WriteString(t.input.View())
+// leaves counts the entries under n, in every folder below it.
+func leaves(n *node) int {
+	c := 0
+	for _, ch := range n.children {
+		if ch.path == "" {
+			c += leaves(ch)
 		} else {
-			b.WriteString(theme.Label.Render("filter: " + t.filter))
+			c++
 		}
-		b.WriteByte('\n')
 	}
+	return c
+}
+
+// view renders the visible window of rows, the one under the cursor on the selection band.
+func (t *tree) view(focused bool) string {
 	if len(t.rows) == 0 {
 		if t.filter != "" {
-			b.WriteString(theme.Label.Render("no match"))
-		} else {
-			b.WriteString(theme.Label.Render("no entries") + "\n" +
-				theme.Label.Render("press a to add your first entry"))
+			return "  " + theme.Muted("no entry matches ") + theme.Bold(theme.Clean(t.filter))
 		}
-		return b.String()
+		return "  " + theme.Muted("the store is empty") + "\n\n  " + theme.Key("a", "add your first entry")
 	}
-	lines, _ := t.lines()
-	h := t.visibleHeight()
-	start := t.offset
-	if start > len(lines) {
-		start = len(lines)
+	end := min(len(t.rows), t.offset+t.height)
+	lines := make([]string, 0, end-t.offset)
+	for i := t.offset; i < end; i++ {
+		lines = append(lines, t.renderRow(t.rows[i], t.prefixes[i], i == t.cursor, focused))
 	}
-	end := start + h
-	if end > len(lines) {
-		end = len(lines)
-	}
-	for i := start; i < end; i++ {
-		b.WriteString(lines[i])
-		if i < end-1 {
-			b.WriteByte('\n')
-		}
-	}
-	return b.String()
+	return strings.Join(lines, "\n")
 }
 
-// renderRow draws one row: filtered rows show the full path; otherwise the
-// dim box-drawing prefix leads the styled label (folders accented with a
-// trailing slash, leaves plain). The selected row reverses the whole line.
-func (t *tree) renderRow(n *node, prefix string, sel bool) string {
-	if t.filter != "" {
-		row := truncate("  "+n.path, t.width)
-		style := theme.Item
-		if sel {
-			style = theme.Selected
-		}
-		return style.Width(t.width).Render(row)
-	}
-
-	label := n.label
-	style := theme.Item
-	if n.path == "" {
-		label = n.label + "/"
-		style = theme.Label // folders in dim tan, like the connectors
-	}
-	avail := t.width - lipgloss.Width(prefix)
-	if avail < 0 {
-		avail = 0
-	}
-	label = truncate(label, avail)
-
+// renderRow draws one row: a marker, the tree's branches, then the label. Filtered rows show the
+// whole path with the match picked out. Folders end in a faint slash and count what they hide.
+func (t *tree) renderRow(n *node, prefix string, sel, focused bool) string {
+	var bg color.Color
+	marker := []theme.Span{theme.S("  ", theme.ToneFaint)}
 	if sel {
-		return theme.Selected.Width(t.width).Render(prefix + label)
+		bg = theme.P.Surface
+		tone := theme.ToneMuted
+		if focused {
+			bg, tone = theme.P.Selection, theme.ToneAccent
+		}
+		marker = []theme.Span{theme.S("▌ ", tone)}
 	}
-	line := theme.Label.Render(prefix) + style.Render(label)
-	return lipgloss.NewStyle().Width(t.width).Render(line)
+
+	var spans []theme.Span
+	switch {
+	case t.filter != "":
+		spans = matchSpans(n.path, t.filter, sel)
+	case n.path == "":
+		tone := theme.ToneMuted
+		if sel {
+			tone = theme.ToneText
+		}
+		spans = []theme.Span{theme.S(prefix, theme.ToneRule), theme.B(n.label, tone), theme.S("/", theme.ToneFaint)}
+		if !n.expanded {
+			spans = append(spans, theme.S(fmt.Sprintf(" +%d", leaves(n)), theme.ToneFaint))
+		}
+	default:
+		label := theme.S(n.label, theme.ToneBody)
+		if sel {
+			label = theme.B(n.label, theme.ToneText)
+		}
+		spans = []theme.Span{theme.S(prefix, theme.ToneRule), label}
+	}
+	if sel {
+		spans = lift(spans)
+	}
+	return line(append(marker, spans...), t.width, bg)
 }
 
-// truncate trims s to w runes, adding an ellipsis when it overflows.
-func truncate(s string, w int) string {
-	if w <= 0 {
-		return ""
+// matchSpans renders a path with the part matching the filter in the accent.
+func matchSpans(path, filter string, sel bool) []theme.Span {
+	tone := theme.ToneBody
+	if sel {
+		tone = theme.ToneText
 	}
-	r := []rune(s)
-	if len(r) <= w {
-		return s
+	lower := strings.ToLower(path)
+	i := strings.Index(lower, strings.ToLower(filter))
+	if i < 0 || len(lower) != len(path) {
+		return theme.Path(path, tone)
 	}
-	if w == 1 {
-		return string(r[:1])
+	j := i + len(filter)
+	spans := theme.Path(path[:i], tone)
+	if i == 0 {
+		spans = nil
 	}
-	return string(r[:w-1]) + "…"
+	spans = append(spans, theme.B(path[i:j], theme.ToneAccent))
+	if j < len(path) {
+		spans = append(spans, theme.Path(path[j:], tone)...)
+	}
+	return spans
+}
+
+// lift raises faint spans on a selected row, where the ground has less contrast to spare.
+func lift(spans []theme.Span) []theme.Span {
+	out := make([]theme.Span, len(spans))
+	for i, s := range spans {
+		switch s.Tone {
+		case theme.ToneFaint:
+			s.Tone = theme.ToneMuted
+		case theme.ToneRule:
+			s.Tone = theme.ToneFaint
+		}
+		out[i] = s
+	}
+	return out
 }

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 // visiblePaths returns the path (or folder label + "/") of each visible row,
@@ -60,7 +60,7 @@ func TestFilterFlattensMatches(t *testing.T) {
 
 	tr.startFilter()
 	for _, r := range "work" {
-		tr.updateFilter(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		tr.updateFilter(tea.KeyPressMsg{Code: r, Text: string(r)})
 	}
 
 	got := visiblePaths(&tr)
